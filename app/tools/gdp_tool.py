@@ -46,19 +46,53 @@ class GDPTool:
                 params["date"] = f"{year}:{year}"
             
             response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()  # Raise exception for bad status codes
             data = response.json()
             
-            if len(data) > 1 and data[1]:
-                latest = data[1][0] if data[1] else None
-                if latest:
+            # World Bank API returns [metadata, data_array]
+            if not isinstance(data, list) or len(data) < 2:
+                logger.warning(f"Unexpected API response structure: {type(data)}")
+                return {"error": "Invalid API response format"}
+            
+            data_array = data[1]
+            
+            # If no data for requested year, try to get latest available
+            if not data_array or len(data_array) == 0:
+                if year:
+                    # Year not available, try without year filter
+                    logger.info(f"No data for {year}, fetching latest available")
+                    params_no_year = {"format": "json", "per_page": 10}
+                    response = requests.get(url, params=params_no_year, timeout=10)
+                    response.raise_for_status()
+                    data = response.json()
+                    data_array = data[1] if len(data) > 1 else []
+            
+            if data_array and len(data_array) > 0:
+                # Get the most recent entry (first in array is usually latest)
+                latest = data_array[0]
+                
+                # Check if value exists and is not None
+                gdp_value = latest.get("value")
+                if gdp_value is None:
+                    # Try to find entry with value
+                    for entry in data_array:
+                        if entry.get("value") is not None:
+                            latest = entry
+                            gdp_value = latest.get("value")
+                            break
+                
+                if gdp_value is not None:
                     return {
                         "country": country,
                         "year": latest.get("date"),
-                        "gdp_usd": latest.get("value"),
-                        "indicator": latest.get("indicator", {}).get("value", "GDP")
+                        "gdp_usd": float(gdp_value),
+                        "indicator": latest.get("indicator", {}).get("value", "GDP") if isinstance(latest.get("indicator"), dict) else "GDP"
                     }
+                else:
+                    logger.warning(f"GDP data found but value is None for {country}")
+                    return {"error": f"GDP data exists but value is not available for {country}"}
             
-            return {"error": "No GDP data found"}
+            return {"error": f"No GDP data found for {country}" + (f" in year {year}" if year else "")}
             
         except Exception as e:
             logger.error(f"Error getting GDP data: {str(e)}")
@@ -96,15 +130,22 @@ class GDPTool:
         country = country or kwargs.get("country", "US")
         
         if action == "gdp":
-            data = self.get_gdp_data(country, kwargs.get("year"))
+            year = kwargs.get("year")
+            data = self.get_gdp_data(country, year)
             if "error" in data:
-                return f"Error: {data['error']}"
+                error_msg = data['error']
+                # If year was requested but not found, provide helpful message
+                if year and "No GDP data found" in error_msg:
+                    return f"GDP data for {year} is not available yet. The latest available data will be shown instead. {error_msg}"
+                return f"Error: {error_msg}"
             
             formatted = f"GDP Data for {data['country']}:\n\n"
             formatted += f"Year: {data['year']}\n"
             if data.get('gdp_usd'):
                 gdp_billions = data['gdp_usd'] / 1e9
                 formatted += f"GDP: ${gdp_billions:.2f} billion USD\n"
+                if year and str(data['year']) != str(year):
+                    formatted += f"\nNote: Data for {year} is not available yet. Showing latest available year ({data['year']}).\n"
             return formatted
         
         elif action == "indicators":

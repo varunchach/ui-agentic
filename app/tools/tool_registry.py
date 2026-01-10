@@ -80,6 +80,9 @@ class ToolRegistry:
         try:
             if tool_name == "web_search":
                 query = kwargs.get("query", "")
+                if not query or not query.strip():
+                    logger.warning(f"Empty query provided to web_search tool. kwargs: {kwargs}")
+                    return "Error: No search query provided. Please provide a valid search query."
                 return tool(query)
             elif tool_name == "finance":
                 action = kwargs.get("action", "stock_info")
@@ -88,7 +91,9 @@ class ToolRegistry:
             elif tool_name == "gdp":
                 action = kwargs.get("action", "gdp")
                 country = kwargs.get("country", "US")
-                return tool(action, country, **kwargs)
+                # Remove action and country from kwargs to avoid duplicate arguments
+                kwargs_clean = {k: v for k, v in kwargs.items() if k not in ["country", "action"]}
+                return tool(action, country=country, **kwargs_clean)
             else:
                 return f"Tool '{tool_name}' execution not implemented"
         except Exception as e:

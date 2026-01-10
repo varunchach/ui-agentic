@@ -87,13 +87,15 @@ class RouterAgent:
    - Query asks about specific content in the document
    - Query references information that should be in the document
    - Query is about BFSI KPIs, financial metrics from the document
+   - Query mentions "in the document", "from the document", "document says"
 
 2. Use Tools if:
    - Query asks for real-time information (current stock prices, news)
-   - Query asks for data not in the document (GDP, economic indicators)
+   - Query asks for data not in the document (GDP, economic indicators, country data)
    - Query asks for general market information
-   - Query asks "what is" or "tell me about" for general topics
+   - Query asks "what is" or "tell me about" for general topics (GDP, stock prices, etc.)
    - Query needs web search for current events
+   - Query mentions "GDP", "economic", "country", "stock price", "current price"
 
 3. Use Both if:
    - Query needs document context AND real-time data
@@ -125,19 +127,55 @@ Route this query:""")
             else:
                 content = str(response)
             
+            logger.debug(f"LLM routing response: {content[:300]}")
+            
             # Parse JSON response
             import json
             import re
             
-            # Extract JSON from response
-            json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
+            # Extract JSON from response (handle nested braces)
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content, re.DOTALL)
             if json_match:
-                routing_decision = json.loads(json_match.group())
+                try:
+                    routing_decision = json.loads(json_match.group())
+                    # Validate routing decision
+                    if not routing_decision.get('route') or routing_decision.get('route') not in ['rag', 'tool', 'both']:
+                        logger.warning(f"Invalid route in LLM response: {routing_decision}, using heuristic")
+                        routing_decision = self._heuristic_route(query, has_document_context)
+                    else:
+                        # Ensure tool_params exists
+                        if routing_decision.get('tool_name') and 'tool_params' not in routing_decision:
+                            routing_decision['tool_params'] = {}
+                        
+                        # Normalize country names to codes for GDP tool
+                        if routing_decision.get('tool_name') == 'gdp' and routing_decision.get('tool_params'):
+                            country = routing_decision['tool_params'].get('country')
+                            if country:
+                                normalized_country = self._normalize_country_name(country)
+                                routing_decision['tool_params']['country'] = normalized_country
+                            # Extract year if not already present
+                            if 'year' not in routing_decision.get('tool_params', {}):
+                                year = self._extract_year(query)
+                                if year:
+                                    routing_decision['tool_params']['year'] = year
+                        
+                        # Ensure web_search always has query in tool_params
+                        if routing_decision.get('tool_name') == 'web_search':
+                            if not routing_decision.get('tool_params'):
+                                routing_decision['tool_params'] = {}
+                            if 'query' not in routing_decision['tool_params'] or not routing_decision['tool_params'].get('query'):
+                                routing_decision['tool_params']['query'] = query
+                        
+                        logger.info(f"LLM routing successful: {routing_decision.get('route')} -> {routing_decision.get('tool_name')}")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse JSON from LLM response: {e}, content: {content[:200]}, using heuristic")
+                    routing_decision = self._heuristic_route(query, has_document_context)
             else:
                 # Fallback: simple heuristic
+                logger.warning(f"No JSON found in LLM response: {content[:200]}, using heuristic")
                 routing_decision = self._heuristic_route(query, has_document_context)
             
-            logger.info(f"Routing decision: {routing_decision.get('route')} for query: {query[:50]}")
+            logger.info(f"Final routing decision: {routing_decision.get('route')} for query: {query[:50]}")
             return routing_decision
             
         except Exception as e:
@@ -157,10 +195,30 @@ Route this query:""")
         """
         query_lower = query.lower()
         
+        # Strong tool indicators (check first - these override everything)
+        strong_tool_indicators = ["gdp", "economic indicator", "stock price", "current price", "market data"]
+        if any(indicator in query_lower for indicator in strong_tool_indicators):
+            # Determine which tool
+            if any(kw in query_lower for kw in ["gdp", "economic", "country", "economy"]):
+                year = self._extract_year(query)
+                return {
+                    "route": "tool",
+                    "tool_name": "gdp",
+                    "tool_params": {"action": "gdp", "country": self._extract_country(query), "year": year},
+                    "reasoning": "Query about GDP/economic data"
+                }
+            elif any(kw in query_lower for kw in ["stock", "price", "market", "finance"]):
+                return {
+                    "route": "tool",
+                    "tool_name": "finance",
+                    "tool_params": {"action": "stock_info", "symbol": self._extract_symbol(query)},
+                    "reasoning": "Query about stock/market data"
+                }
+        
         # Keywords that suggest tool usage
         tool_keywords = [
             "current", "today", "latest", "now", "real-time",
-            "stock", "price", "market", "gdp", "economic",
+            "stock", "price", "market", "gdp", "economic", "economy",
             "search", "find", "what is", "tell me about"
         ]
         
@@ -197,6 +255,14 @@ Route this query:""")
                     "reasoning": "Query needs web search"
                 }
         elif has_context and (rag_score > 0 or tool_score == 0):
+            # But check if it's clearly a tool query first
+            if any(kw in query_lower for kw in ["gdp", "economic", "economy", "country"]):
+                return {
+                    "route": "tool",
+                    "tool_name": "gdp",
+                    "tool_params": {"action": "gdp", "country": self._extract_country(query)},
+                    "reasoning": "Query about GDP/economic data (overrides document context)"
+                }
             return {
                 "route": "rag",
                 "tool_name": None,
@@ -204,6 +270,14 @@ Route this query:""")
                 "reasoning": "Query about document content"
             }
         else:
+            # No document context - check for tool queries
+            if any(kw in query_lower for kw in ["gdp", "economic", "economy", "country"]):
+                return {
+                    "route": "tool",
+                    "tool_name": "gdp",
+                    "tool_params": {"action": "gdp", "country": self._extract_country(query)},
+                    "reasoning": "Query about GDP/economic data"
+                }
             return {
                 "route": "tool",
                 "tool_name": "web_search",
@@ -222,12 +296,59 @@ Route this query:""")
         """Extract country code from query."""
         query_lower = query.lower()
         country_map = {
-            "usa": "US", "united states": "US", "america": "US",
-            "india": "IN", "indian": "IN",
-            "china": "CN", "chinese": "CN",
-            "uk": "GB", "united kingdom": "GB", "britain": "GB",
+            "usa": "US", "united states": "US", "america": "US", "us": "US",
+            "india": "IN", "indian": "IN", "in": "IN",
+            "china": "CN", "chinese": "CN", "cn": "CN",
+            "uk": "GB", "united kingdom": "GB", "britain": "GB", "gb": "GB",
         }
         for key, code in country_map.items():
             if key in query_lower:
                 return code
         return "US"  # Default
+    
+    def _extract_year(self, query: str) -> Optional[int]:
+        """Extract year from query.
+        
+        Args:
+            query: User query
+            
+        Returns:
+            Year as integer or None if not found
+        """
+        import re
+        # Look for 4-digit years (1900-2099)
+        year_match = re.search(r'\b(19[0-9]{2}|20[0-9]{2})\b', query)
+        if year_match:
+            try:
+                return int(year_match.group(1))
+            except (ValueError, AttributeError):
+                pass
+        return None
+    
+    def _normalize_country_name(self, country: str) -> str:
+        """Normalize country name to country code.
+        
+        Args:
+            country: Country name or code
+            
+        Returns:
+            Country code (US, IN, CN, etc.)
+        """
+        country_lower = country.lower().strip()
+        country_map = {
+            "usa": "US", "united states": "US", "america": "US", "us": "US",
+            "india": "IN", "indian": "IN", "in": "IN",
+            "china": "CN", "chinese": "CN", "cn": "CN",
+            "uk": "GB", "united kingdom": "GB", "britain": "GB", "gb": "GB",
+            "germany": "DE", "de": "DE",
+            "france": "FR", "fr": "FR",
+            "japan": "JP", "jp": "JP",
+        }
+        for key, code in country_map.items():
+            if key in country_lower:
+                return code
+        # If not found, try to use as-is if it's already a 2-letter code
+        if len(country) == 2 and country.isupper():
+            return country
+        # Default to US
+        return "US"
