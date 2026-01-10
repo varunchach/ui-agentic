@@ -1,0 +1,49 @@
+# Core Framework
+streamlit>=1.28.0
+langchain>=0.1.0
+langchain-community>=0.0.20
+langchain-openai>=0.0.5
+langchain-core>=0.1.0
+langchain-anthropic>=0.1.0
+langchain-text-splitters>=0.0.1
+langgraph>=0.0.20
+
+# Document Processing
+docling>=1.0.0
+pypdf>=3.17.0
+python-docx>=1.1.0
+pandas>=2.1.0
+openpyxl>=3.1.0
+
+# Embeddings
+# Using Hugging Face sentence-transformers for nomic embeddings
+# nomic-embed-text package has installation issues, using HF instead
+
+# Vector Database
+faiss-cpu>=1.7.4
+
+# Re-ranking
+FlagEmbedding>=1.2.0
+torch>=2.0.0
+
+# Report Generation
+markdown>=3.5.0
+reportlab>=4.0.0
+markdown2>=2.4.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+numpy>=1.24.0
+tqdm>=4.66.0
+
+# Additional dependencies
+sentence-transformers>=2.2.0
+transformers>=4.30.0
+einops>=0.7.0
+
+# Tools for agentic RAG
+tavily-python>=0.3.0
+duckduckgo-search>=4.0.0
+yfinance>=0.2.0
+requests>=2.31.0
