@@ -162,33 +162,54 @@ def main():
             if not st.session_state.document_uploaded:
                 if st.button("📥 Ingest Document", use_container_width=True, type="primary"):
                     try:
-                        with st.spinner("Processing document..."):
-                            # Initialize pipeline
-                            pipeline = IngestionPipeline(progress_callback=progress_callback)
-                            
-                            # Ingest document
+                        # Use empty() to create a placeholder for status updates
+                        status_placeholder = st.empty()
+                        status_placeholder.info("🔄 Starting ingestion... This may take a few minutes for large documents.")
+                        
+                        # Initialize pipeline
+                        pipeline = IngestionPipeline(progress_callback=progress_callback)
+                        
+                        # Ingest document with better error handling
+                        try:
                             vector_store = pipeline.ingest(
                                 file_path=uploaded_file.name,
                                 file_content=file_content,
                                 document_id=doc_id
                             )
-                            
-                            # Store in session state
-                            st.session_state.vector_store = vector_store
-                            st.session_state.document_uploaded = True
-                            
-                            # Initialize orchestrator
+                        except MemoryError:
+                            clear_progress()
+                            status_placeholder.error("❌ Out of memory during ingestion. The document may be too large. Try a smaller document or increase pod memory limits.")
+                            logger.error("Memory error during ingestion")
+                            st.stop()
+                        except Exception as ingest_error:
+                            clear_progress()
+                            status_placeholder.error(f"❌ Ingestion failed: {str(ingest_error)}")
+                            logger.error(f"Ingestion error: {str(ingest_error)}", exc_info=True)
+                            st.stop()
+                        
+                        # Store in session state
+                        st.session_state.vector_store = vector_store
+                        st.session_state.document_uploaded = True
+                        
+                        # Initialize orchestrator
+                        try:
                             orchestrator = AgentOrchestrator(vector_store)
                             st.session_state.orchestrator = orchestrator
-                            
+                        except Exception as orch_error:
                             clear_progress()
-                            show_status("✅ Document ingested successfully!", "success")
-                            st.rerun()
+                            status_placeholder.error(f"❌ Failed to initialize orchestrator: {str(orch_error)}")
+                            logger.error(f"Orchestrator initialization error: {str(orch_error)}", exc_info=True)
+                            st.stop()
+                        
+                        clear_progress()
+                        status_placeholder.success("✅ Document ingested successfully!")
+                        logger.info(f"Document {uploaded_file.name} ingested successfully")
+                        st.rerun()
                             
                     except Exception as e:
                         clear_progress()
-                        show_status(f"❌ Error during ingestion: {str(e)}", "error")
-                        logger.error(f"Ingestion error: {str(e)}", exc_info=True)
+                        show_status(f"❌ Unexpected error during ingestion: {str(e)}", "error")
+                        logger.error(f"Unexpected ingestion error: {str(e)}", exc_info=True)
             else:
                 show_status("✅ Document ready", "success")
                 st.info(f"Document: {uploaded_file.name}")

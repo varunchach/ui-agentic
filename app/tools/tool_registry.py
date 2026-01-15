@@ -87,7 +87,9 @@ class ToolRegistry:
             elif tool_name == "finance":
                 action = kwargs.get("action", "stock_info")
                 symbol = kwargs.get("symbol")
-                return tool(action, symbol, **kwargs)
+                # Remove action and symbol from kwargs to avoid duplicate arguments
+                kwargs_clean = {k: v for k, v in kwargs.items() if k not in ["action", "symbol"]}
+                return tool(action, symbol, **kwargs_clean)
             elif tool_name == "gdp":
                 action = kwargs.get("action", "gdp")
                 country = kwargs.get("country", "US")

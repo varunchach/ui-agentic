@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bfsi-doc-intelligence
+  labels:
+    app: bfsi-doc-intelligence
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bfsi-doc-intelligence
+  template:
+    metadata:
+      labels:
+        app: bfsi-doc-intelligence
+    spec:
+      containers:
+      - name: bfsi-doc-intelligence
+        image: quay.io/vraste/bfsi-doc-intelligence:latest
+        ports:
+        - containerPort: 8501
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: bfsi-doc-intelligence-config
+        - secretRef:
+            name: bfsi-doc-intelligence-secrets
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: HOME
+          value: "/home/appuser"
+        - name: STREAMLIT_SERVER_TIMEOUT
+          value: "600"
+        - name: HF_HOME
+          value: "/home/appuser/.cache/huggingface"
+        - name: TRANSFORMERS_CACHE
+          value: "/home/appuser/.cache/huggingface/transformers"
+        - name: HF_DATASETS_CACHE
+          value: "/home/appuser/.cache/huggingface/datasets"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "4Gi"
+            cpu: "4000m"
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+

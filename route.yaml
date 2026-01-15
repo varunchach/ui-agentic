@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: bfsi-doc-intelligence
+  labels:
+    app: bfsi-doc-intelligence
+spec:
+  to:
+    kind: Service
+    name: bfsi-doc-intelligence
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+

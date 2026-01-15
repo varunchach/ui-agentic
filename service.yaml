@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bfsi-doc-intelligence
+  labels:
+    app: bfsi-doc-intelligence
+spec:
+  ports:
+  - port: 8501
+    targetPort: 8501
+    protocol: TCP
+    name: http
+  selector:
+    app: bfsi-doc-intelligence
+  type: ClusterIP
+

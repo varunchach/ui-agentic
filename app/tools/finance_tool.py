@@ -55,6 +55,34 @@ class FinanceTool:
         except Exception as e:
             logger.error(f"Error getting stock info for {symbol}: {str(e)}")
             return {"error": str(e)}
+
+    def resolve_symbol(self, query: str) -> Optional[str]:
+        """Resolve a stock symbol from a natural language query."""
+        if not query:
+            return None
+        query_lower = query.lower()
+        name_to_symbol = {
+            "indian bank": "INDIANB.NS",
+            "state bank of india": "SBIN.NS",
+            "sbi": "SBIN.NS",
+            "hdfc bank": "HDFCBANK.NS",
+            "icici bank": "ICICIBANK.NS",
+            "axis bank": "AXISBANK.NS",
+            "kotak bank": "KOTAKBANK.NS",
+            "kotak mahindra bank": "KOTAKBANK.NS",
+            "bank of baroda": "BANKBARODA.NS",
+            "bob": "BANKBARODA.NS",
+            "punjab national bank": "PNB.NS",
+            "pnb": "PNB.NS",
+            "canara bank": "CANBK.NS",
+            "bank of india": "BANKINDIA.NS",
+            "union bank": "UNIONBANK.NS",
+            "indusind bank": "INDUSINDBK.NS",
+        }
+        for name, symbol in name_to_symbol.items():
+            if name in query_lower:
+                return symbol
+        return None
     
     def get_historical_data(self, symbol: str, period: str = "1mo") -> Dict[str, Any]:
         """Get historical stock data.
@@ -100,8 +128,19 @@ class FinanceTool:
         Returns:
             Formatted financial data as string
         """
-        if action == "stock_info" and symbol:
-            info = self.get_stock_info(symbol)
+        query = kwargs.get("query")
+        resolved_from_query = self.resolve_symbol(query)
+        # If query clearly maps to a known symbol, prefer it over a mismatched symbol
+        if resolved_from_query and symbol and resolved_from_query != symbol:
+            logger.info(
+                "Overriding provided symbol '%s' with resolved '%s' from query.",
+                symbol,
+                resolved_from_query,
+            )
+        resolved_symbol = resolved_from_query or symbol
+
+        if action == "stock_info" and resolved_symbol:
+            info = self.get_stock_info(resolved_symbol)
             if "error" in info:
                 return f"Error: {info['error']}"
             
@@ -115,9 +154,9 @@ class FinanceTool:
             formatted += f"52 Week Low: ${info['52_week_low']}\n"
             return formatted
         
-        elif action == "historical_data" and symbol:
+        elif action == "historical_data" and resolved_symbol:
             period = kwargs.get("period", "1mo")
-            data = self.get_historical_data(symbol, period)
+            data = self.get_historical_data(resolved_symbol, period)
             if "error" in data:
                 return f"Error: {data['error']}"
             
@@ -129,4 +168,7 @@ class FinanceTool:
             formatted += f"Total Volume: {data['volume']:,}\n"
             return formatted
         
-        return "Invalid action. Use 'stock_info' or 'historical_data' with a symbol."
+        return (
+            "Invalid action or missing symbol. Use 'stock_info' or 'historical_data' with a symbol, "
+            "e.g., 'HDFCBANK.NS', 'SBIN.NS', or 'AAPL'."
+        )

@@ -159,6 +159,15 @@ Route this query:""")
                                 if year:
                                     routing_decision['tool_params']['year'] = year
                         
+                        # Ensure finance tool has symbol or query for resolution
+                        if routing_decision.get('tool_name') == 'finance':
+                            if not routing_decision.get('tool_params'):
+                                routing_decision['tool_params'] = {}
+                            if not routing_decision['tool_params'].get('symbol'):
+                                routing_decision['tool_params']['symbol'] = self._extract_symbol(query)
+                            if 'query' not in routing_decision['tool_params'] or not routing_decision['tool_params'].get('query'):
+                                routing_decision['tool_params']['query'] = query
+
                         # Ensure web_search always has query in tool_params
                         if routing_decision.get('tool_name') == 'web_search':
                             if not routing_decision.get('tool_params'):
@@ -211,7 +220,11 @@ Route this query:""")
                 return {
                     "route": "tool",
                     "tool_name": "finance",
-                    "tool_params": {"action": "stock_info", "symbol": self._extract_symbol(query)},
+                    "tool_params": {
+                        "action": "stock_info",
+                        "symbol": self._extract_symbol(query),
+                        "query": query
+                    },
                     "reasoning": "Query about stock/market data"
                 }
         
@@ -237,7 +250,11 @@ Route this query:""")
                 return {
                     "route": "tool",
                     "tool_name": "finance",
-                    "tool_params": {"action": "stock_info", "symbol": self._extract_symbol(query)},
+                    "tool_params": {
+                        "action": "stock_info",
+                        "symbol": self._extract_symbol(query),
+                        "query": query
+                    },
                     "reasoning": "Query about stock/market data"
                 }
             elif any(kw in query_lower for kw in ["gdp", "economic", "country"]):
@@ -288,8 +305,32 @@ Route this query:""")
     def _extract_symbol(self, query: str) -> Optional[str]:
         """Extract stock symbol from query."""
         import re
+        query_lower = query.lower()
+        # Common Indian bank name mappings to NSE symbols
+        name_to_symbol = {
+            "indian bank": "INDIANB.NS",
+            "state bank of india": "SBIN.NS",
+            "sbi": "SBIN.NS",
+            "hdfc bank": "HDFCBANK.NS",
+            "icici bank": "ICICIBANK.NS",
+            "axis bank": "AXISBANK.NS",
+            "kotak bank": "KOTAKBANK.NS",
+            "kotak mahindra bank": "KOTAKBANK.NS",
+            "bank of baroda": "BANKBARODA.NS",
+            "bob": "BANKBARODA.NS",
+            "punjab national bank": "PNB.NS",
+            "pnb": "PNB.NS",
+            "canara bank": "CANBK.NS",
+            "bank of india": "BANKINDIA.NS",
+            "union bank": "UNIONBANK.NS",
+            "indusind bank": "INDUSINDBK.NS",
+        }
+        for name, symbol in name_to_symbol.items():
+            if name in query_lower:
+                return symbol
+
         # Look for common patterns like "AAPL", "MSFT", etc.
-        symbol_match = re.search(r'\b[A-Z]{2,5}\b', query.upper())
+        symbol_match = re.search(r'\b[A-Z]{2,6}\b', query.upper())
         return symbol_match.group() if symbol_match else None
     
     def _extract_country(self, query: str) -> str:
