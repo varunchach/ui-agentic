@@ -28,8 +28,8 @@ An intelligent agentic RAG system for BFSI (Banking, Financial Services, and Ins
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/varunchach/Finance_doc_Analyzer_Agentic_demo.git
-   cd Finance_doc_Analyzer_Agentic_demo
+   git clone https://github.com/varunchach/Finance_doc_Analyzer_Agentic_AI.git
+   cd Finance_doc_Analyzer_Agentic_AI
    ```
 
 2. **Create virtual environment**
